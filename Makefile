@@ -1,2 +1,2 @@
-PROJECT_NAME := play_mp3_control
+PROJECT_NAME := audio_manager
 include $(ADF_PATH)/project.mk

@@ -15,93 +15,10 @@
 #include "audio_mem.h"            // 音频内存管理相关API
 #include "audio_common.h"         // 音频通用定义和工具
 #include "i2s_stream.h"           // I2S音频流相关API
-// #include "mp3_decoder.h"        // MP3解码器（如需使用MP3解码功能可取消注释）
-
-// #include "esp_peripherals.h"      // ESP外设管理相关API
-// #include "periph_touch.h"       // 触摸外设（如需使用可取消注释）
-// #include "periph_adc_button.h"  // ADC按键外设（如需使用可取消注释）
-// #include "periph_button.h"      // 按键外设（如需使用可取消注释）
-// #include "board.h"              // 板级支持包（如需使用可取消注释）
+#include "opus_encoder.h"         // Opus编码器相关API
 
 // 日志TAG
 static const char *TAG = "PLAY_FLASH_MP3_CONTROL";
-
-// // 文件标记结构体，用于记录当前播放的MP3文件的起止地址和播放进度
-// static struct marker {
-//     int pos;                // 当前已读取的字节数
-//     const uint8_t *start;   // MP3文件起始地址
-//     const uint8_t *end;     // MP3文件结束地址
-// } file_marker;
-
-// // 低码率MP3音频文件（8000Hz，双声道）
-// extern const uint8_t lr_mp3_start[] asm("_binary_music_16b_2c_8000hz_mp3_start");
-// extern const uint8_t lr_mp3_end[]   asm("_binary_music_16b_2c_8000hz_mp3_end");
-
-// // 中码率MP3音频文件（22050Hz，双声道）
-// extern const uint8_t mr_mp3_start[] asm("_binary_music_16b_2c_22050hz_mp3_start");
-// extern const uint8_t mr_mp3_end[]   asm("_binary_music_16b_2c_22050hz_mp3_end");
-
-// // 高码率MP3音频文件（44100Hz，双声道）
-// extern const uint8_t hr_mp3_start[] asm("_binary_music_16b_2c_44100hz_mp3_start");
-// extern const uint8_t hr_mp3_end[]   asm("_binary_music_16b_2c_44100hz_mp3_end");
-
-// /**
-//  * @brief 切换到下一个MP3文件
-//  *        按顺序循环切换低、中、高码率的MP3文件
-//  */
-// static void set_next_file_marker()
-// {
-//     static int idx = 0; // 静态变量，记录当前文件索引
-
-//     switch (idx) {
-//         case 0:
-//             file_marker.start = lr_mp3_start;
-//             file_marker.end   = lr_mp3_end;
-//             break;
-//         case 1:
-//             file_marker.start = mr_mp3_start;
-//             file_marker.end   = mr_mp3_end;
-//             break;
-//         case 2:
-//             file_marker.start = hr_mp3_start;
-//             file_marker.end   = hr_mp3_end;
-//             break;
-//         default:
-//             ESP_LOGE(TAG, "[ * ] Not supported index = %d", idx);
-//     }
-//     if (++idx > 2) {
-//         idx = 0; // 循环回到第一个文件
-//     }
-//     file_marker.pos = 0; // 重置读取位置
-// }
-
-// /**
-//  * @brief MP3数据读取回调函数
-//  *        从file_marker指定的MP3文件中读取数据到buf
-//  * 
-//  * @param el        音频元素句柄
-//  * @param buf       目标缓冲区
-//  * @param len       期望读取的字节数
-//  * @param wait_time 等待时间
-//  * @param ctx       用户上下文
-//  * @return int      实际读取的字节数，或AEL_IO_DONE表示读取结束
-//  */
-// int mp3_music_read_cb(audio_element_handle_t el, char *buf, int len, TickType_t wait_time, void *ctx)
-// {
-//     // 计算剩余可读字节数
-//     int read_size = file_marker.end - file_marker.start - file_marker.pos;
-//     if (read_size == 0) {
-//         // 已读完，返回AEL_IO_DONE通知解码器
-//         return AEL_IO_DONE;
-//     } else if (len < read_size) {
-//         // 只读取len大小
-//         read_size = len;
-//     }
-//     // 拷贝数据到buf
-//     memcpy(buf, file_marker.start + file_marker.pos, read_size);
-//     file_marker.pos += read_size; // 更新已读位置
-//     return read_size;
-// }
 
 /**
  * @brief 主应用入口
@@ -110,20 +27,69 @@ static const char *TAG = "PLAY_FLASH_MP3_CONTROL";
 void app_main(void)
 {
     audio_pipeline_handle_t pipeline;                // 音频管道句柄
-    audio_element_handle_t i2s_stream_writer;//, mp3_decoder; // 元素句柄
+    audio_element_handle_t i2s_stream_reader;       // I2S输入流句柄
+    audio_element_handle_t opus_encoder;            // OPUS编码器句柄
 
     // 设置日志等级
     esp_log_level_set("*", ESP_LOG_WARN);
     esp_log_level_set(TAG, ESP_LOG_INFO);
 
-    // ESP_LOGI(TAG, "[ 1 ] Start audio codec chip");
-    // // 初始化音频板卡，启动音频编解码芯片
-    // audio_board_handle_t board_handle = audio_board_init();
-    // audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_DECODE, AUDIO_HAL_CTRL_START);
+    // ===================== I2S流配置（详细注释版） =====================
 
-    // int player_volume;
-    // // 获取当前音量
-    // audio_hal_get_volume(board_handle->audio_hal, &player_volume);
+    // 1. 创建I2S流配置结构体，并初始化为默认值（I2S_NUM_0, 44100Hz, 16bit, 写模式）
+    //    这里我们会覆盖部分默认参数以适配实际需求
+    i2s_stream_cfg_t i2s_cfg = I2S_STREAM_CFG_DEFAULT();
+
+    // 2. 设置I2S流为"读取"模式（即从I2S外设采集音频数据）
+    i2s_cfg.type = AUDIO_STREAM_READER;
+
+    // 3. 设置I2S传输模式为标准I2S（STD），即I2S标准通信协议
+    i2s_cfg.transmit_mode = I2S_COMM_MODE_STD;
+
+    // 4. 通道（Channel）相关配置
+    i2s_cfg.chan_cfg.id = I2S_NUM_0;                // 选择I2S控制器编号（I2S0）
+    i2s_cfg.chan_cfg.role = I2S_ROLE_MASTER;        // 设置为主机模式（Master）
+    i2s_cfg.chan_cfg.dma_desc_num = 3;              // DMA描述符数量（决定DMA缓冲区数量）
+    i2s_cfg.chan_cfg.dma_frame_num = 300;           // 每个DMA缓冲区的帧数（影响延迟和吞吐）
+    i2s_cfg.chan_cfg.auto_clear = false;            // 关闭自动清除（接收模式下通常不需要自动清除发送描述符）
+
+    // 5. 标准I2S时钟相关配置
+    i2s_cfg.std_cfg.clk_cfg.sample_rate_hz = 44100;         // 采样率设置为44.1kHz
+    i2s_cfg.std_cfg.clk_cfg.clk_src = I2S_CLK_SRC_DEFAULT;  // 使用默认时钟源
+    i2s_cfg.std_cfg.clk_cfg.mclk_multiple = I2S_MCLK_MULTIPLE_256; // MCLK频率为采样率的256倍
+
+    // 6. 时隙（Slot）相关配置
+    i2s_cfg.std_cfg.slot_cfg.data_bit_width = I2S_DATA_BIT_WIDTH_24BIT; // 每个采样点24位数据
+    i2s_cfg.std_cfg.slot_cfg.slot_bit_width = I2S_SLOT_BIT_WIDTH_AUTO;  // 槽位宽度自动适配
+    i2s_cfg.std_cfg.slot_cfg.slot_mode = I2S_SLOT_MODE_MONO;            // 单声道模式
+    i2s_cfg.std_cfg.slot_cfg.slot_mask = I2S_STD_SLOT_LEFT;             // 仅使用左声道（右声道数据忽略）
+    i2s_cfg.std_cfg.slot_cfg.ws_width = 24;                             // WS（Word Select）宽度为24位
+    i2s_cfg.std_cfg.slot_cfg.ws_pol = false;                            // WS极性：false=标准极性
+    i2s_cfg.std_cfg.slot_cfg.bit_shift = true;                          // 启用bit shift（数据左对齐）
+
+    // 7. GPIO引脚配置
+    i2s_cfg.std_cfg.gpio_cfg.mclk = I2S_GPIO_UNUSED;    // 不使用MCLK输出
+    i2s_cfg.std_cfg.gpio_cfg.bclk = 2;                  // BCLK（位时钟）连接到GPIO2
+    i2s_cfg.std_cfg.gpio_cfg.ws = 3;                    // WS（字选择/帧同步）连接到GPIO3
+    i2s_cfg.std_cfg.gpio_cfg.dout = I2S_GPIO_UNUSED;    // 不使用DOUT（本例为接收模式）
+    i2s_cfg.std_cfg.gpio_cfg.din = 4;                   // DIN（数据输入）连接到GPIO4
+    i2s_cfg.std_cfg.gpio_cfg.invert_flags.mclk_inv = false; // MCLK不反相
+    i2s_cfg.std_cfg.gpio_cfg.invert_flags.bclk_inv = false; // BCLK不反相
+
+    // 8. 其他高级参数配置
+    i2s_cfg.use_alc = false;                            // 不启用自动电平控制（ALC）
+    i2s_cfg.volume = 0;                                 // 默认音量（0dB，未做增益/衰减）
+    i2s_cfg.out_rb_size = I2S_STREAM_RINGBUFFER_SIZE;   // 输出环形缓冲区大小（默认宏定义）
+    i2s_cfg.task_stack = I2S_STREAM_TASK_STACK;         // 任务堆栈大小（默认宏定义）
+    i2s_cfg.task_core = I2S_STREAM_TASK_CORE;           // 任务运行核心（默认宏定义）
+    i2s_cfg.task_prio = I2S_STREAM_TASK_PRIO;           // 任务优先级（默认宏定义）
+    i2s_cfg.stack_in_ext = false;                       // 堆栈不放在外部RAM
+    i2s_cfg.multi_out_num = 0;                          // 不启用多路输出
+    i2s_cfg.uninstall_drv = true;                       // 流销毁时自动卸载I2S驱动
+    i2s_cfg.need_expand = false;                        // 不扩展数据位宽
+    i2s_cfg.expand_src_bits = I2S_DATA_BIT_WIDTH_24BIT; // 源数据位宽为24位
+    i2s_cfg.buffer_len = I2S_STREAM_BUF_SIZE;           // 元素缓冲区长度（默认宏定义）
+    // ===================== I2S流配置结束 =====================
 
     ESP_LOGI(TAG, "[ 2 ] Create audio pipeline, add all elements to pipeline, and subscribe pipeline event");
     // 创建音频管道
@@ -131,40 +97,31 @@ void app_main(void)
     pipeline = audio_pipeline_init(&pipeline_cfg);
     mem_assert(pipeline);
 
-    // ESP_LOGI(TAG, "[2.1] Create mp3 decoder to decode mp3 file and set custom read callback");
-    // // 创建MP3解码器，并设置自定义读取回调
-    // mp3_decoder_cfg_t mp3_cfg = DEFAULT_MP3_DECODER_CONFIG();
-    // mp3_decoder = mp3_decoder_init(&mp3_cfg);
-    // audio_element_set_read_cb(mp3_decoder, mp3_music_read_cb, NULL);
+    // 创建OPUS编码器
+    ESP_LOGI(TAG, "[2.1] Create OPUS encoder");
+    opus_encoder_cfg_t opus_cfg = DEFAULT_OPUS_ENCODER_CONFIG();
+    opus_cfg.sample_rate = 44100;  // 设置采样率与I2S输入一致
+    opus_cfg.channel = 1;          // 单声道
+    opus_cfg.bitrate = 64000;      // 设置比特率
+    opus_encoder = encoder_opus_init(&opus_cfg);
+    if (!opus_encoder) {
+        ESP_LOGE(TAG, "Failed to create OPUS encoder");
+        return;
+    }
 
-//     ESP_LOGI(TAG, "[2.2] Create i2s stream to write data to codec chip");
-//     // 创建I2S流，用于向编解码芯片输出音频数据
-// #if defined CONFIG_ESP32_C3_LYRA_V2_BOARD
-//     i2s_stream_cfg_t i2s_cfg = I2S_STREAM_PDM_TX_CFG_DEFAULT();
-// #else
-//     i2s_stream_cfg_t i2s_cfg = I2S_STREAM_CFG_DEFAULT();
-// #endif
-//     i2s_cfg.type = AUDIO_STREAM_WRITER; // 设置为写模式
-    // i2s_stream_writer = i2s_stream_init(&i2s_cfg);
+    // 创建I2S输入流
+    ESP_LOGI(TAG, "[2.2] Create I2S stream reader");
+    i2s_stream_reader = i2s_stream_init(&i2s_cfg);
 
-    // ESP_LOGI(TAG, "[2.3] Register all elements to audio pipeline");
-    // // 注册MP3解码器和I2S流到管道
-    // audio_pipeline_register(pipeline, mp3_decoder, "mp3");
-    // audio_pipeline_register(pipeline, i2s_stream_writer, "i2s");
+    // 注册元素到管道
+    ESP_LOGI(TAG, "[2.3] Register all elements to audio pipeline");
+    audio_pipeline_register(pipeline, i2s_stream_reader, "i2s");
+    audio_pipeline_register(pipeline, opus_encoder, "opus");
 
-    ESP_LOGI(TAG, "[2.4] Link it together [mp3_music_read_cb]-->mp3_decoder-->i2s_stream-->[codec_chip]");
-    // 连接管道各元素
-    const char *link_tag[2] = {"mp3", "i2s"};
+    // 链接管道元素
+    ESP_LOGI(TAG, "[2.4] Link it together [i2s]-->[opus]");
+    const char *link_tag[2] = {"i2s", "opus"};
     audio_pipeline_link(pipeline, &link_tag[0], 2);
-
-    // ESP_LOGI(TAG, "[ 3 ] Initialize peripherals");
-    // // 初始化外设（如按键、触摸等）
-    // esp_periph_config_t periph_cfg = DEFAULT_ESP_PERIPH_SET_CONFIG();
-    // esp_periph_set_handle_t set = esp_periph_set_init(&periph_cfg);
-
-    // ESP_LOGI(TAG, "[3.1] Initialize keys on board");
-    // // 初始化板载按键
-    // audio_board_key_init(set);
 
     ESP_LOGI(TAG, "[ 4 ] Set up  event listener");
     // 创建事件监听器
@@ -175,17 +132,12 @@ void app_main(void)
     // 监听管道元素事件
     audio_pipeline_set_listener(pipeline, evt);
 
-    // ESP_LOGI(TAG, "[4.2] Listening event from peripherals");
-    // // 监听外设事件
-    // audio_event_iface_set_listener(esp_periph_set_get_event_iface(set), evt);
-
     ESP_LOGW(TAG, "[ 5 ] Tap touch buttons to control music player:");
     ESP_LOGW(TAG, "      [Play] to start, pause and resume, [Set] to stop.");
     ESP_LOGW(TAG, "      [Vol-] or [Vol+] to adjust volume.");
 
     ESP_LOGI(TAG, "[ 5.1 ] Start audio_pipeline");
-    // 设置初始MP3文件
-    // set_next_file_marker();
+
     // 启动音频管道
     audio_pipeline_run(pipeline);
 
@@ -197,91 +149,6 @@ void app_main(void)
         if (ret != ESP_OK) {
             continue;
         }
-
-    //     // 处理MP3解码器上报的音乐信息事件
-    //     if (msg.source_type == AUDIO_ELEMENT_TYPE_ELEMENT && msg.source == (void *) mp3_decoder
-    //         && msg.cmd == AEL_MSG_CMD_REPORT_MUSIC_INFO) {
-    //         audio_element_info_t music_info = {0};
-    //         audio_element_getinfo(mp3_decoder, &music_info);
-    //         ESP_LOGI(TAG, "[ * ] Receive music info from mp3 decoder, sample_rates=%d, bits=%d, ch=%d",
-    //                  music_info.sample_rates, music_info.bits, music_info.channels);
-    //         // 设置I2S时钟参数
-    //         i2s_stream_set_clk(i2s_stream_writer, music_info.sample_rates, music_info.bits, music_info.channels);
-    //         continue;
-    //     }
-
-    //     // 处理按键/触摸/ADC按钮事件
-    //     if ((msg.source_type == PERIPH_ID_TOUCH || msg.source_type == PERIPH_ID_BUTTON || msg.source_type == PERIPH_ID_ADC_BTN)
-    //         && (msg.cmd == PERIPH_TOUCH_TAP || msg.cmd == PERIPH_BUTTON_PRESSED || msg.cmd == PERIPH_ADC_BUTTON_PRESSED)) {
-    //         // 播放/暂停/恢复
-    //         if ((int) msg.data == get_input_play_id()) {
-    //             ESP_LOGI(TAG, "[ * ] [Play] touch tap event");
-    //             audio_element_state_t el_state = audio_element_get_state(i2s_stream_writer);
-    //             switch (el_state) {
-    //                 case AEL_STATE_INIT :
-    //                     ESP_LOGI(TAG, "[ * ] Starting audio pipeline");
-    //                     audio_pipeline_run(pipeline);
-    //                     break;
-    //                 case AEL_STATE_RUNNING :
-    //                     ESP_LOGI(TAG, "[ * ] Pausing audio pipeline");
-    //                     audio_pipeline_pause(pipeline);
-    //                     break;
-    //                 case AEL_STATE_PAUSED :
-    //                     ESP_LOGI(TAG, "[ * ] Resuming audio pipeline");
-    //                     audio_pipeline_resume(pipeline);
-    //                     break;
-    //                 case AEL_STATE_FINISHED :
-    //                     ESP_LOGI(TAG, "[ * ] Rewinding audio pipeline");
-    //                     // 复位管道，切换下一个文件
-    //                     audio_pipeline_reset_ringbuffer(pipeline);
-    //                     audio_pipeline_reset_elements(pipeline);
-    //                     audio_pipeline_change_state(pipeline, AEL_STATE_INIT);
-    //                     set_next_file_marker();
-    //                     audio_pipeline_run(pipeline);
-    //                     break;
-    //                 default :
-    //                     ESP_LOGI(TAG, "[ * ] Not supported state %d", el_state);
-    //             }
-    //         } 
-    //         // 停止
-    //         else if ((int) msg.data == get_input_set_id()) {
-    //             ESP_LOGI(TAG, "[ * ] [Set] touch tap event");
-    //             ESP_LOGI(TAG, "[ * ] Stopping audio pipeline");
-    //             break; // 跳出主循环，进行资源释放
-    //         } 
-    //         // 切换曲目
-    //         else if ((int) msg.data == get_input_mode_id()) {
-    //             ESP_LOGI(TAG, "[ * ] [mode] tap event");
-    //             // 停止并复位管道，切换下一个MP3文件
-    //             audio_pipeline_stop(pipeline);
-    //             audio_pipeline_wait_for_stop(pipeline);
-    //             audio_pipeline_terminate(pipeline);
-    //             audio_pipeline_reset_ringbuffer(pipeline);
-    //             audio_pipeline_reset_elements(pipeline);
-    //             set_next_file_marker();
-    //             audio_pipeline_run(pipeline);
-    //         } 
-    //         // 音量加
-    //         else if ((int) msg.data == get_input_volup_id()) {
-    //             ESP_LOGI(TAG, "[ * ] [Vol+] touch tap event");
-    //             player_volume += 10;
-    //             if (player_volume > 100) {
-    //                 player_volume = 100;
-    //             }
-    //             audio_hal_set_volume(board_handle->audio_hal, player_volume);
-    //             ESP_LOGI(TAG, "[ * ] Volume set to %d %%", player_volume);
-    //         } 
-    //         // 音量减
-    //         else if ((int) msg.data == get_input_voldown_id()) {
-    //             ESP_LOGI(TAG, "[ * ] [Vol-] touch tap event");
-    //             player_volume -= 10;
-    //             if (player_volume < 0) {
-    //                 player_volume = 0;
-    //             }
-    //             audio_hal_set_volume(board_handle->audio_hal, player_volume);
-    //             ESP_LOGI(TAG, "[ * ] Volume set to %d %%", player_volume);
-    //         }
-    //     }
     }
 
     // 退出主循环后，释放资源
@@ -289,8 +156,10 @@ void app_main(void)
     audio_pipeline_stop(pipeline);
     audio_pipeline_wait_for_stop(pipeline);
     audio_pipeline_terminate(pipeline);
-    // audio_pipeline_unregister(pipeline, mp3_decoder);
-    audio_pipeline_unregister(pipeline, i2s_stream_writer);
+    
+    // 注销管道元素
+    audio_pipeline_unregister(pipeline, i2s_stream_reader);
+    audio_pipeline_unregister(pipeline, opus_encoder);
 
     /* 在移除事件监听器前终止管道 */
     audio_pipeline_remove_listener(pipeline);
@@ -300,6 +169,6 @@ void app_main(void)
 
     /* 释放所有资源 */
     audio_pipeline_deinit(pipeline);
-    audio_element_deinit(i2s_stream_writer);
-    // audio_element_deinit(mp3_decoder);
+    audio_element_deinit(i2s_stream_reader);
+    audio_element_deinit(opus_encoder);
 }
