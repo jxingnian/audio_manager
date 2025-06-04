@@ -16,6 +16,11 @@
 #include "audio_common.h"         // 音频通用定义和工具
 #include "i2s_stream.h"           // I2S音频流相关API
 #include "opus_encoder.h"         // Opus编码器相关API
+#include "filter_resample.h"   // 重采样滤波器
+#include "raw_stream.h"        // 原始流
+#include "opus_decode_play.h"   // 新增头文件引用
+#include "opus_decoder.h"       // Opus解码器相关API
+// #include "esp_vad.h"           // VAD检测
 
 // 日志TAG
 static const char *TAG = "PLAY_FLASH_MP3_CONTROL";
@@ -29,6 +34,8 @@ void app_main(void)
     audio_pipeline_handle_t pipeline;                // 音频管道句柄
     audio_element_handle_t i2s_stream_reader;       // I2S输入流句柄
     audio_element_handle_t opus_encoder;            // OPUS编码器句柄
+    audio_element_handle_t filter;        // 重采样滤波器句柄
+    audio_element_handle_t raw_writer;    // 编码后数据输出
 
     // 设置日志等级
     esp_log_level_set("*", ESP_LOG_WARN);
@@ -103,11 +110,27 @@ void app_main(void)
     opus_cfg.sample_rate = 44100;  // 设置采样率与I2S输入一致
     opus_cfg.channel = 1;          // 单声道
     opus_cfg.bitrate = 64000;      // 设置比特率
+    opus_cfg.complexity = 10;      // 设置复杂度
     opus_encoder = encoder_opus_init(&opus_cfg);
     if (!opus_encoder) {
         ESP_LOGE(TAG, "Failed to create OPUS encoder");
         return;
     }
+
+    // [新增] 创建重采样滤波器
+    rsp_filter_cfg_t rsp_cfg = DEFAULT_RESAMPLE_FILTER_CONFIG();
+    rsp_cfg.src_rate = 44100;      // I2S输入采样率
+    rsp_cfg.src_ch = 1;            // I2S输入通道
+    rsp_cfg.dest_rate = 16000;     // VAD/编码器目标采样率
+    rsp_cfg.dest_ch = 1;           // 单声道
+    filter = rsp_filter_init(&rsp_cfg);
+
+    // [新增] 创建raw_stream用于输出编码后数据
+    raw_stream_cfg_t raw_cfg = {
+        .type = AUDIO_STREAM_READER, // 作为reader读取编码后数据
+        .out_rb_size = 8 * 1024,
+    };
+    raw_writer = raw_stream_init(&raw_cfg);
 
     // 创建I2S输入流
     ESP_LOGI(TAG, "[2.2] Create I2S stream reader");
@@ -116,12 +139,14 @@ void app_main(void)
     // 注册元素到管道
     ESP_LOGI(TAG, "[2.3] Register all elements to audio pipeline");
     audio_pipeline_register(pipeline, i2s_stream_reader, "i2s");
+    audio_pipeline_register(pipeline, filter, "filter");         // 新增
     audio_pipeline_register(pipeline, opus_encoder, "opus");
+    audio_pipeline_register(pipeline, raw_writer, "raw");        // 新增
 
     // 链接管道元素
-    ESP_LOGI(TAG, "[2.4] Link it together [i2s]-->[opus]");
-    const char *link_tag[2] = {"i2s", "opus"};
-    audio_pipeline_link(pipeline, &link_tag[0], 2);
+    ESP_LOGI(TAG, "[2.4] Link it together [i2s]-->[filter]-->[opus]-->[raw]");
+    const char *link_tag[4] = {"i2s", "filter", "opus", "raw"};
+    audio_pipeline_link(pipeline, &link_tag[0], 4);
 
     ESP_LOGI(TAG, "[ 4 ] Set up  event listener");
     // 创建事件监听器
@@ -141,7 +166,21 @@ void app_main(void)
     // 启动音频管道
     audio_pipeline_run(pipeline);
 
+    // 启动opus解码播放任务
+    opus_decode_play_start();
+
     // 主循环，处理事件
+//     // [新增] VAD相关初始化
+//     static vad_handle_t vad_inst = NULL;
+//     static int16_t *vad_buff = NULL;
+// #define VAD_SAMPLE_RATE_HZ 16000
+// #define VAD_FRAME_LENGTH_MS 30
+// #define VAD_BUFFER_LENGTH (VAD_FRAME_LENGTH_MS * VAD_SAMPLE_RATE_HZ / 1000)
+//     if (!vad_inst) {
+//         vad_inst = vad_create(VAD_MODE_4);
+//         vad_buff = (int16_t *)malloc(VAD_BUFFER_LENGTH * sizeof(int16_t));
+//     }
+    char opus_buffer[1024];
     while (1) {
         audio_event_iface_msg_t msg;
         // 等待事件（阻塞）
@@ -149,6 +188,21 @@ void app_main(void)
         if (ret != ESP_OK) {
             continue;
         }
+        // [新增] 读取编码后数据（Opus），可用于网络发送
+        int opus_bytes = raw_stream_read(raw_writer, opus_buffer, sizeof(opus_buffer));
+        if (opus_bytes > 0) {
+            // 这里可以直接发送opus_buffer, opus_bytes到服务器
+            // websocket_send(opus_buffer, opus_bytes);
+            opus_decode_play_write((const uint8_t *)opus_buffer, opus_bytes);
+        }
+        // // [新增] 读取重采样后的PCM数据用于VAD
+        // int pcm_bytes = audio_element_input(filter, (char *)vad_buff, VAD_BUFFER_LENGTH * sizeof(int16_t));
+        // if (pcm_bytes > 0) {
+        //     vad_state_t vad_state = vad_process(vad_inst, vad_buff, VAD_SAMPLE_RATE_HZ, VAD_FRAME_LENGTH_MS);
+        //     if (vad_state == VAD_SPEECH) {
+        //         ESP_LOGI(TAG, "检测到语音");
+        //     }
+        // }
     }
 
     // 退出主循环后，释放资源
@@ -156,10 +210,11 @@ void app_main(void)
     audio_pipeline_stop(pipeline);
     audio_pipeline_wait_for_stop(pipeline);
     audio_pipeline_terminate(pipeline);
-    
-    // 注销管道元素
+
     audio_pipeline_unregister(pipeline, i2s_stream_reader);
+    audio_pipeline_unregister(pipeline, filter);         // 新增
     audio_pipeline_unregister(pipeline, opus_encoder);
+    audio_pipeline_unregister(pipeline, raw_writer);     // 新增
 
     /* 在移除事件监听器前终止管道 */
     audio_pipeline_remove_listener(pipeline);
@@ -170,5 +225,9 @@ void app_main(void)
     /* 释放所有资源 */
     audio_pipeline_deinit(pipeline);
     audio_element_deinit(i2s_stream_reader);
+    audio_element_deinit(filter);        // 新增
     audio_element_deinit(opus_encoder);
+    audio_element_deinit(raw_writer);    // 新增
+    // if (vad_buff) free(vad_buff);        // 新增
+    // if (vad_inst) vad_destroy(vad_inst); // 新增
 }
