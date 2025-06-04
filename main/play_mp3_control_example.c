@@ -41,7 +41,16 @@ void app_main(void)
     esp_log_level_set("*", ESP_LOG_WARN);
     esp_log_level_set(TAG, ESP_LOG_INFO);
 
-    // ===================== I2S流配置（详细注释版） =====================
+    // 配置音频管理器
+    audio_manager_config_t config = {
+        .sample_rate = 44100,
+        .channel = 1,
+        .bit_width = I2S_DATA_BIT_WIDTH_24BIT,
+        .i2s_num = I2S_NUM_0,
+        .bclk_pin = 2,
+        .ws_pin = 3,
+        .din_pin = 4
+    };
 
     // 1. 创建I2S流配置结构体，并初始化为默认值（I2S_NUM_0, 44100Hz, 16bit, 写模式）
     //    这里我们会覆盖部分默认参数以适配实际需求
@@ -161,10 +170,9 @@ void app_main(void)
     ESP_LOGW(TAG, "      [Play] to start, pause and resume, [Set] to stop.");
     ESP_LOGW(TAG, "      [Vol-] or [Vol+] to adjust volume.");
 
+    // 启动音频管理器
     ESP_LOGI(TAG, "[ 5.1 ] Start audio_pipeline");
-
-    // 启动音频管道
-    audio_pipeline_run(pipeline);
+    audio_manager_start(audio_mgr);
 
     // 启动opus解码播放任务
     opus_decode_play_start();
@@ -184,7 +192,7 @@ void app_main(void)
     while (1) {
         audio_event_iface_msg_t msg;
         // 等待事件（阻塞）
-        esp_err_t ret = audio_event_iface_listen(evt, &msg, portMAX_DELAY);
+        esp_err_t ret = audio_manager_wait_for_event(audio_mgr, &msg, -1);
         if (ret != ESP_OK) {
             continue;
         }
