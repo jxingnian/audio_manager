@@ -175,9 +175,9 @@ void app_main(void)
     // 监听管道元素事件
     audio_pipeline_set_listener(pipeline, evt);
 
-    ESP_LOGI(TAG, "[4.2] Listening event from peripherals");
-    // 监听外设事件
-    audio_event_iface_set_listener(esp_periph_set_get_event_iface(set), evt);
+    // ESP_LOGI(TAG, "[4.2] Listening event from peripherals");
+    // // 监听外设事件
+    // audio_event_iface_set_listener(esp_periph_set_get_event_iface(set), evt);
 
     ESP_LOGW(TAG, "[ 5 ] Tap touch buttons to control music player:");
     ESP_LOGW(TAG, "      [Play] to start, pause and resume, [Set] to stop.");
@@ -282,14 +282,14 @@ void app_main(void)
     //             ESP_LOGI(TAG, "[ * ] Volume set to %d %%", player_volume);
     //         }
     //     }
-    // }
+    }
 
     // 退出主循环后，释放资源
     ESP_LOGI(TAG, "[ 6 ] Stop audio_pipeline");
     audio_pipeline_stop(pipeline);
     audio_pipeline_wait_for_stop(pipeline);
     audio_pipeline_terminate(pipeline);
-    audio_pipeline_unregister(pipeline, mp3_decoder);
+    // audio_pipeline_unregister(pipeline, mp3_decoder);
     audio_pipeline_unregister(pipeline, i2s_stream_writer);
 
     /* 在移除事件监听器前终止管道 */
@@ -301,5 +301,5 @@ void app_main(void)
     /* 释放所有资源 */
     audio_pipeline_deinit(pipeline);
     audio_element_deinit(i2s_stream_writer);
-    audio_element_deinit(mp3_decoder);
+    // audio_element_deinit(mp3_decoder);
 }
