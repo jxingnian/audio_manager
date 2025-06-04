@@ -1,4 +1,3 @@
-
 # (Automatically converted from project Makefile by convert_to_cmake.py.)
 
 # The following lines of boilerplate have to be in your project's CMakeLists
