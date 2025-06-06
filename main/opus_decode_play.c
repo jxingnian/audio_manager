@@ -1,8 +1,8 @@
 /*
  * @Author: xingnian j_xingnian@163.com
  * @Date: 2025-06-04 20:58:41
- * @LastEditors: 星年
- * @LastEditTime: 2025-06-05 09:12:16
+ * @LastEditors: 星年 && j_xingnian@163.com
+ * @LastEditTime: 2025-06-05 20:35:37
  * @FilePath: \audio_manager\main\opus_decode_play.c
  * @Description: Opus解码播放模块实现文件，负责将Opus编码数据解码并通过I2S播放
  *
@@ -65,6 +65,8 @@ static void opus_decode_play_task(void *arg)
 
     // 2. 创建 Opus 解码器
     opus_decoder_cfg_t opus_cfg = DEFAULT_OPUS_DECODER_CONFIG(); // 获取默认Opus解码器配置
+    // opus_cfg.sample_rate = 44100;
+    // opus_cfg.channel = 1;                                         // 单声道
     opus_decoder = decoder_opus_init(&opus_cfg);                 // 初始化Opus解码器元素
 
     // 3. 创建 I2S 播放器
@@ -73,10 +75,11 @@ static void opus_decode_play_task(void *arg)
     i2s_cfg.std_cfg.slot_cfg.slot_mode = I2S_SLOT_MODE_MONO;     // 单声道输出
     i2s_cfg.std_cfg.slot_cfg.data_bit_width = I2S_DATA_BIT_WIDTH_16BIT; // 16位数据宽度
     i2s_cfg.std_cfg.gpio_cfg.mclk = I2S_GPIO_UNUSED;                    // 未用MCLK
-    i2s_cfg.std_cfg.gpio_cfg.bclk = 2;                                 // BCLK引脚
-    i2s_cfg.std_cfg.gpio_cfg.ws = 3;                                   // WS引脚
+    i2s_cfg.std_cfg.gpio_cfg.bclk = 19;                                 // BCLK引脚
+    i2s_cfg.std_cfg.gpio_cfg.ws = 8;                                   // WS引脚
     i2s_cfg.std_cfg.gpio_cfg.dout = I2S_GPIO_UNUSED;                   // 未用DOUT
-    i2s_cfg.std_cfg.gpio_cfg.din = 4;                                  // DIN引脚
+    i2s_cfg.std_cfg.gpio_cfg.din = 20;                                  // DIN引脚
+    i2s_cfg.volume = 80;                                                // 默认音量
     i2s_writer = i2s_stream_init(&i2s_cfg);                      // 初始化I2S元素
 
     // 4. 创建音频管道
@@ -103,13 +106,12 @@ static void opus_decode_play_task(void *arg)
     ESP_LOGI(TAG, "Opus decode play pipeline started");
 
     // 主循环，监听管道事件
-    while (1) {
-        audio_event_iface_msg_t msg;
-        // 阻塞等待事件（如管道状态变化、错误等）
-        esp_err_t ret = audio_event_iface_listen(evt, &msg, portMAX_DELAY);
-        if (ret != ESP_OK) continue;
-        // 可根据需要处理事件（如结束、错误等），此处暂不处理
-    }
+while (1) {
+    audio_event_iface_msg_t msg;
+    esp_err_t ret = audio_event_iface_listen(evt, &msg, portMAX_DELAY);
+    if (ret != ESP_OK) continue;
+    // ESP_LOGI(TAG, "event: source_type=%d, cmd=%d, data=%p", msg.source_type, msg.cmd, msg.data);
+}
 
     // 退出任务时的资源清理
     audio_pipeline_stop(pipeline);                // 停止管道

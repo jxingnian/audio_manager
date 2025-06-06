@@ -1,8 +1,8 @@
 /*
  * @Author: jixingnian@gmail.com
  * @Date: 2025-06-05 08:35:56
- * @LastEditTime: 2025-06-05 09:10:43
- * @LastEditors: 星年
+ * @LastEditTime: 2025-06-05 20:35:19
+ * @LastEditors: 星年 && j_xingnian@163.com
  * @Description: Opus编码录制模块实现，负责采集I2S音频、重采样、编码并输出Opus数据
  * @FilePath: \audio_manager\main\opus_encode_recorder.c
  * 遇事不决，可问春风
@@ -51,38 +51,38 @@ static void opus_encode_recorder_task(void *arg)
     i2s_cfg.transmit_mode = I2S_COMM_MODE_STD;                 // 标准I2S模式
     i2s_cfg.chan_cfg.id = I2S_NUM_0;                           // I2S通道0
     i2s_cfg.chan_cfg.role = I2S_ROLE_MASTER;                   // 主模式
-    i2s_cfg.chan_cfg.dma_desc_num = 3;                         // DMA描述符数量
-    i2s_cfg.chan_cfg.dma_frame_num = 300;                      // DMA帧数
-    i2s_cfg.chan_cfg.auto_clear = false;                       // 不自动清除
+    // i2s_cfg.chan_cfg.dma_desc_num = 3;                         // DMA描述符数量
+    // i2s_cfg.chan_cfg.dma_frame_num = 300;                      // DMA帧数
+    // i2s_cfg.chan_cfg.auto_clear = false;                       // 不自动清除
     i2s_cfg.std_cfg.clk_cfg.sample_rate_hz = 44100;            // 输入采样率44.1kHz
-    i2s_cfg.std_cfg.clk_cfg.clk_src = I2S_CLK_SRC_DEFAULT;     // 默认时钟源
-    i2s_cfg.std_cfg.clk_cfg.mclk_multiple = I2S_MCLK_MULTIPLE_256; // MCLK倍频
+    // i2s_cfg.std_cfg.clk_cfg.clk_src = I2S_CLK_SRC_DEFAULT;     // 默认时钟源
+    // i2s_cfg.std_cfg.clk_cfg.mclk_multiple = I2S_MCLK_MULTIPLE_256; // MCLK倍频
     i2s_cfg.std_cfg.slot_cfg.data_bit_width = I2S_DATA_BIT_WIDTH_24BIT; // 24位数据宽度
-    i2s_cfg.std_cfg.slot_cfg.slot_bit_width = I2S_SLOT_BIT_WIDTH_AUTO;  // 自动槽宽
+    // i2s_cfg.std_cfg.slot_cfg.slot_bit_width = I2S_SLOT_BIT_WIDTH_AUTO;  // 自动槽宽
     i2s_cfg.std_cfg.slot_cfg.slot_mode = I2S_SLOT_MODE_MONO;            // 单声道
     i2s_cfg.std_cfg.slot_cfg.slot_mask = I2S_STD_SLOT_LEFT;             // 左声道
     i2s_cfg.std_cfg.slot_cfg.ws_width = 24;                             // WS宽度
-    i2s_cfg.std_cfg.slot_cfg.ws_pol = false;                            // WS极性
-    i2s_cfg.std_cfg.slot_cfg.bit_shift = true;                          // 位移
+    // i2s_cfg.std_cfg.slot_cfg.ws_pol = false;                            // WS极性
+    // i2s_cfg.std_cfg.slot_cfg.bit_shift = true;                          // 位移
     i2s_cfg.std_cfg.gpio_cfg.mclk = I2S_GPIO_UNUSED;                    // 未用MCLK
-    i2s_cfg.std_cfg.gpio_cfg.bclk = 2;                                 // BCLK引脚
-    i2s_cfg.std_cfg.gpio_cfg.ws = 3;                                   // WS引脚
+    i2s_cfg.std_cfg.gpio_cfg.bclk = 41;                                 // BCLK引脚
+    i2s_cfg.std_cfg.gpio_cfg.ws = 42;                                   // WS引脚
     i2s_cfg.std_cfg.gpio_cfg.dout = I2S_GPIO_UNUSED;                   // 未用DOUT
-    i2s_cfg.std_cfg.gpio_cfg.din = 4;                                  // DIN引脚
-    i2s_cfg.std_cfg.gpio_cfg.invert_flags.mclk_inv = false;            // 不反转MCLK
-    i2s_cfg.std_cfg.gpio_cfg.invert_flags.bclk_inv = false;            // 不反转BCLK
-    i2s_cfg.use_alc = false;                                           // 不使用ALC
+    i2s_cfg.std_cfg.gpio_cfg.din = 2;                                  // DIN引脚
+    // i2s_cfg.std_cfg.gpio_cfg.invert_flags.mclk_inv = false;            // 不反转MCLK
+    // i2s_cfg.std_cfg.gpio_cfg.invert_flags.bclk_inv = false;            // 不反转BCLK
+    // i2s_cfg.use_alc = false;                                           // 不使用ALC
     i2s_cfg.volume = 80;                                                // 默认音量
     i2s_cfg.out_rb_size = I2S_STREAM_RINGBUFFER_SIZE;                  // 输出环形缓冲区大小
     i2s_cfg.task_stack = I2S_STREAM_TASK_STACK;                        // 任务堆栈
-    i2s_cfg.task_core = I2S_STREAM_TASK_CORE;                          // 任务绑定核心
-    i2s_cfg.task_prio = I2S_STREAM_TASK_PRIO;                          // 任务优先级
-    i2s_cfg.stack_in_ext = false;                                      // 堆栈不在外部RAM
-    i2s_cfg.multi_out_num = 0;                                         // 不使用多路输出
-    i2s_cfg.uninstall_drv = true;                                      // 任务结束时卸载驱动
-    i2s_cfg.need_expand = false;                                       // 不需要扩展
-    i2s_cfg.expand_src_bits = I2S_DATA_BIT_WIDTH_24BIT;                // 扩展源位宽
-    i2s_cfg.buffer_len = I2S_STREAM_BUF_SIZE;                          // 缓冲区长度
+    // i2s_cfg.task_core = I2S_STREAM_TASK_CORE;                          // 任务绑定核心
+    // i2s_cfg.task_prio = I2S_STREAM_TASK_PRIO;                          // 任务优先级
+    // i2s_cfg.stack_in_ext = false;                                      // 堆栈不在外部RAM
+    // i2s_cfg.multi_out_num = 0;                                         // 不使用多路输出
+    // i2s_cfg.uninstall_drv = true;                                      // 任务结束时卸载驱动
+    // i2s_cfg.need_expand = false;                                       // 不需要扩展
+    // i2s_cfg.expand_src_bits = I2S_DATA_BIT_WIDTH_24BIT;                // 扩展源位宽
+    // i2s_cfg.buffer_len = I2S_STREAM_BUF_SIZE;                          // 缓冲区长度
 
     // 2. 创建音频管道
     audio_pipeline_cfg_t pipeline_cfg = DEFAULT_AUDIO_PIPELINE_CONFIG();
@@ -91,10 +91,10 @@ static void opus_encode_recorder_task(void *arg)
 
     // 3. 创建Opus编码器元素
     opus_encoder_cfg_t opus_cfg = DEFAULT_OPUS_ENCODER_CONFIG();
-    opus_cfg.sample_rate = 44100;                                      // 输入采样率
-    opus_cfg.channel = 1;                                              // 单声道
-    opus_cfg.bitrate = 64000;                                          // 目标比特率
-    opus_cfg.complexity = 10;                                          // 编码复杂度
+    // opus_cfg.sample_rate = 44100;                                      // 输入采样率
+    // opus_cfg.channel = 1;                                              // 单声道
+    // opus_cfg.bitrate = 64000;                                          // 目标比特率
+    // opus_cfg.complexity = 10;                                          // 编码复杂度
     opus_encoder = encoder_opus_init(&opus_cfg);                       // 初始化Opus编码器
     if (!opus_encoder) {
         ESP_LOGE(OPUS_RECORDER_TAG, "Failed to create OPUS encoder");  // 创建失败日志
